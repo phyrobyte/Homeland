@@ -8,6 +8,7 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraftforge.event.RegisterCommandsEvent;
+import net.minecraftforge.event.entity.living.LivingDeathEvent;
 import net.minecraftforge.event.server.ServerStartedEvent;
 import net.minecraftforge.event.server.ServerStoppingEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
@@ -35,6 +36,7 @@ public class HomeCommand {
     }
 
     private static final Map<UUID, HomeData> homeDataMap = new HashMap<>();
+    private static final Map<UUID, BlockPos> deathLocations = new HashMap<>();
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     private static MinecraftServer server;
 
@@ -47,6 +49,12 @@ public class HomeCommand {
                         .then(Commands.literal("set")
                                 .executes(ctx -> setHome(ctx.getSource()))
                         )
+        );
+
+        event.getDispatcher().register(
+                Commands.literal("tpdeath")
+                        .requires(source -> source.getEntity() instanceof ServerPlayer)
+                        .executes(ctx -> tpDeath(ctx.getSource()))
         );
     }
 
@@ -80,6 +88,21 @@ public class HomeCommand {
         return 1;
     }
 
+    private static int tpDeath(CommandSourceStack source) {
+        ServerPlayer player = source.getPlayer();
+        assert player != null;
+
+        if (!deathLocations.containsKey(player.getUUID())) {
+            source.sendFailure(Component.literal("You haven't died yet!"));
+            return 0;
+        }
+
+        BlockPos deathLocation = deathLocations.get(player.getUUID());
+        player.teleportTo(deathLocation.getX() + 0.5, deathLocation.getY(), deathLocation.getZ() + 0.5);
+        source.sendSuccess(() -> Component.literal("Teleported to your death location!"), false);
+        return 1;
+    }
+
     @SubscribeEvent
     public static void onServerStarted(ServerStartedEvent event) {
         server = event.getServer();
@@ -90,6 +113,14 @@ public class HomeCommand {
     public static void onServerStopping(ServerStoppingEvent event) {
         saveHomes();
     }
+
+    @SubscribeEvent
+    public static void onPlayerDeath(LivingDeathEvent event) {
+        if (event.getEntity() instanceof ServerPlayer player) {
+            deathLocations.put(player.getUUID(), player.blockPosition());
+        }
+    }
+
 
     private static File getSaveFile() {
         if (server == null) return null;
