@@ -22,6 +22,18 @@ import java.util.UUID;
 @Mod.EventBusSubscriber(modid = "homeland", bus = Mod.EventBusSubscriber.Bus.FORGE)
 public class HomeCommand {
 
+    public static class HomeData {
+        public final BlockPos pos;
+        public final float yaw;
+        public final float pitch;
+
+        public HomeData(BlockPos pos, float yaw, float pitch) {
+            this.pos = pos;
+            this.yaw = yaw;
+            this.pitch = pitch;
+        }
+    }
+
     private static final Map<UUID, HomeData> homeDataMap = new HashMap<>();
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     private static MinecraftServer server;
@@ -38,24 +50,13 @@ public class HomeCommand {
         );
     }
 
-    private static class HomeData {
-        BlockPos pos;
-        float yaw;
-        float pitch;
-
-        HomeData(BlockPos pos, float yaw, float pitch) {
-            this.pos = pos;
-            this.yaw = yaw;
-            this.pitch = pitch;
-        }
-    }
-
     private static int setHome(CommandSourceStack source) {
         ServerPlayer player = source.getPlayer();
-        UUID uuid = player.getUUID();
+        assert player != null;
         BlockPos pos = player.blockPosition();
         float yaw = player.getYRot();
         float pitch = player.getXRot();
+        UUID uuid = player.getUUID();
 
         homeDataMap.put(uuid, new HomeData(pos, yaw, pitch));
         saveHomes();
@@ -74,25 +75,14 @@ public class HomeCommand {
         }
 
         HomeData home = homeDataMap.get(uuid);
-
-        player.teleportTo(
-                player.serverLevel(), // current dimension
-                home.pos.getX() + 0.5,
-                home.pos.getY(),
-                home.pos.getZ() + 0.5,
-                home.yaw,
-                home.pitch
-        );
-
+        player.teleportTo(player.serverLevel(), home.pos.getX() + 0.5, home.pos.getY(), home.pos.getZ() + 0.5, home.yaw, home.pitch);
         source.sendSuccess(() -> Component.literal("Teleported to home!"), false);
         return 1;
     }
 
-
     @SubscribeEvent
     public static void onServerStarted(ServerStartedEvent event) {
         server = event.getServer();
-        homeDataMap.clear();
         loadHomes();
     }
 
@@ -115,13 +105,13 @@ public class HomeCommand {
 
         JsonObject json = new JsonObject();
         for (Map.Entry<UUID, HomeData> entry : homeDataMap.entrySet()) {
-            JsonObject posJson = new JsonObject();
-            posJson.addProperty("x", entry.getValue().pos.getX());
-            posJson.addProperty("y", entry.getValue().pos.getY());
-            posJson.addProperty("z", entry.getValue().pos.getZ());
-            posJson.addProperty("yaw", entry.getValue().yaw);
-            posJson.addProperty("pitch", entry.getValue().pitch);
-            json.add(entry.getKey().toString(), posJson);
+            JsonObject obj = new JsonObject();
+            obj.addProperty("x", entry.getValue().pos.getX());
+            obj.addProperty("y", entry.getValue().pos.getY());
+            obj.addProperty("z", entry.getValue().pos.getZ());
+            obj.addProperty("yaw", entry.getValue().yaw);
+            obj.addProperty("pitch", entry.getValue().pitch);
+            json.add(entry.getKey().toString(), obj);
         }
 
         try (Writer writer = new FileWriter(file)) {
@@ -140,20 +130,22 @@ public class HomeCommand {
             for (Map.Entry<String, JsonElement> entry : json.entrySet()) {
                 UUID uuid = UUID.fromString(entry.getKey());
                 JsonObject obj = entry.getValue().getAsJsonObject();
-
                 BlockPos pos = new BlockPos(
                         obj.get("x").getAsInt(),
                         obj.get("y").getAsInt(),
                         obj.get("z").getAsInt()
                 );
-
                 float yaw = obj.has("yaw") ? obj.get("yaw").getAsFloat() : 0f;
                 float pitch = obj.has("pitch") ? obj.get("pitch").getAsFloat() : 0f;
-
                 homeDataMap.put(uuid, new HomeData(pos, yaw, pitch));
             }
         } catch (IOException e) {
             System.err.println("Failed to load homes: " + e.getMessage());
         }
+    }
+
+
+    public static Map<UUID, HomeData> getAllHomes() {
+        return new HashMap<>(homeDataMap);
     }
 }
